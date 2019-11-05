@@ -1481,23 +1481,112 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 	StartCountSspClk();
 
 	uint8_t cmd[ISO15693_MAX_COMMAND_LENGTH];
+	uint8_t memory[32*4] = { 0x0F, 0xB3, 0x1B, 0x0D, 0x92, 0xC6, 0xD3, 0x93, 0xA2, 0x86, 0xE3, 0x42, 0xF6, 0x55, 0x03, 0x0C, 0xDF, 0xE5, 0x64, 0x08, 0x79, 0x82, 0x1A, 0x70, 0xF1, 0x78, 0xB5, 0x63, 0x12, 0x40, 0xF5, 0xBE };
 
-	// Build a suitable response to the reader INVENTORY command
-	BuildInventoryResponse(uid);
+	//memset(memory, 0x00, sizeof(memory));
 
 	// Listen to reader
 	while (!BUTTON_PRESS()) {
 		uint32_t eof_time = 0, start_time = 0;
 		int cmd_len = GetIso15693CommandFromReader(cmd, sizeof(cmd), &eof_time);
+		uint8_t flags = cmd[0];
+		bool slow = !(flags & ISO15693_REQ_DATARATE_HIGH);
+		bool addressed = (flags & ISO15693_REQ_ADDRESS);
+		uint8_t command = cmd[1];
 
-		if ((cmd_len >= 5) && (cmd[0] & ISO15693_REQ_INVENTORY) && (cmd[1] == ISO15693_INVENTORY)) { // TODO: check more flags
-			bool slow = !(cmd[0] & ISO15693_REQ_DATARATE_HIGH);
-			start_time = eof_time + DELAY_ISO15693_VCD_TO_VICC_SIM - DELAY_ARM_TO_READER_SIM;
-			TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+		start_time = eof_time + DELAY_ISO15693_VCD_TO_VICC_SIM - DELAY_ARM_TO_READER_SIM;
+
+		switch(command)
+		{
+			case ISO15693_INVENTORY:
+			{
+				// Build a suitable response to the reader INVENTORY command
+				Dbprintf("INVENTORY");
+
+				BuildInventoryResponse(uid);
+				TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				break;
+			}
+
+			case ISO15693_READBLOCK:
+			{
+				uint8_t resp[7];
+				uint16_t crc;
+				uint8_t block = cmd[2 + (addressed ? 8 : 0)];
+
+				Dbprintf("READBLOCK %d", block);
+
+				resp[0] = ISO15693_NOERROR; 
+				memcpy(&resp[1], &memory[4*block], 4);
+				crc = Crc(resp, 5);
+				resp[5] = crc & 0xff;
+				resp[6] = crc >> 8;
+
+				CodeIso15693AsTag(resp, sizeof(resp));
+				TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				break;
+			}
+
+			case 0xB2: /* SLS2S5002_GET_RANDOM_NUMBER */
+			{
+				uint8_t resp[5];
+				uint16_t crc;
+
+				Dbprintf("GET RANDOM");
+
+				resp[0] = ISO15693_NOERROR; 
+				resp[1] = 0xDE;
+				resp[2] = 0xAD;
+				crc = Crc(resp, 3);
+				resp[3] = crc & 0xff;
+				resp[4] = crc >> 8;
+
+				CodeIso15693AsTag(resp, sizeof(resp));
+				TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				break;
+			}
+			case 0xB3: /* SLS2S5002_SET_PASSWORD */
+			{
+				uint8_t resp[3];
+				uint16_t crc;
+				uint8_t offset = 3 + (addressed ? 8 : 0);
+
+				Dbprintf("SET PASSWORD %02X: %02X %02X %02X %02X", cmd[offset + 0], cmd[offset + 1]^0xDE, cmd[offset + 2]^0xAD, cmd[offset + 3]^0xDE, cmd[offset + 4]^0xAD);
+
+				LED_D_ON();
+				resp[0] = ISO15693_NOERROR; 
+				crc = Crc(resp, 1);
+				resp[1] = crc & 0xff;
+				resp[2] = crc >> 8;
+
+				CodeIso15693AsTag(resp, sizeof(resp));
+				TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				break;
+			}
+			case 0xBA: /* SLS2S5002_ENABLE_PRIVACY */
+			{
+				uint8_t resp[3];
+				uint16_t crc;
+
+				Dbprintf("ENABLE PRIVACY");
+
+				resp[0] = ISO15693_NOERROR; 
+				crc = Crc(resp, 1);
+				resp[1] = crc & 0xff;
+				resp[2] = crc >> 8;
+
+				CodeIso15693AsTag(resp, sizeof(resp));
+				TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				break;
+			}
+
+			default:
+			{				
+				Dbprintf("%d bytes read from reader:", cmd_len);
+				Dbhexdump(cmd_len, cmd, false);
+				break;
+			}
 		}
-
-		Dbprintf("%d bytes read from reader:", cmd_len);
-		Dbhexdump(cmd_len, cmd, false);
 	}
 
    	FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
