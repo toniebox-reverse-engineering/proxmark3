@@ -1655,6 +1655,7 @@ void ReaderIso15693(uint32_t parameter) {
 // TODO: interpret other reader commands and send appropriate response
 void SimTagIso15693(uint32_t parameter, uint8_t *uid) {
 
+	bool private = true;
 	LED_A_ON();
 
 	FpgaDownloadAndGo(FPGA_BITSTREAM_HF);
@@ -1665,23 +1666,191 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid) {
 	StartCountSspClk();
 
 	uint8_t cmd[ISO15693_MAX_COMMAND_LENGTH];
+	uint8_t memory[32*4] = { 0x0F, 0xB3, 0x1B, 0x0D, 0x92, 0xC6, 0xD3, 0x93, 0xA2, 0x86, 0xE3, 0x42, 0xF6, 0x55, 0x03, 0x0C, 0xDF, 0xE5, 0x64, 0x08, 0x79, 0x82, 0x1A, 0x70, 0xF1, 0x78, 0xB5, 0x63, 0x12, 0x40, 0xF5, 0xBE };
 
-	// Build a suitable response to the reader INVENTORY command
-	BuildInventoryResponse(uid);
+	//memset(memory, 0x00, sizeof(memory));
 
 	// Listen to reader
 	while (!BUTTON_PRESS()) {
 		uint32_t eof_time = 0, start_time = 0;
 		int cmd_len = GetIso15693CommandFromReader(cmd, sizeof(cmd), &eof_time);
+		uint8_t flags = cmd[0];
+		bool slow = !(flags & ISO15693_REQ_DATARATE_HIGH);
+		bool addressed = (flags & ISO15693_REQ_ADDRESS);
+		uint8_t command = cmd[1];
 
-		if ((cmd_len >= 5) && (cmd[0] & ISO15693_REQ_INVENTORY) && (cmd[1] == ISO15693_INVENTORY)) { // TODO: check more flags
-			bool slow = !(cmd[0] & ISO15693_REQ_DATARATE_HIGH);
-			start_time = eof_time + DELAY_ISO15693_VCD_TO_VICC_SIM;
-			TransmitTo15693Reader(ToSend, ToSendMax, &start_time, 0, slow);
-		}
+		start_time = eof_time + DELAY_ISO15693_VCD_TO_VICC_SIM;
 
 		Dbprintf("%d bytes read from reader:", cmd_len);
 		Dbhexdump(cmd_len, cmd, false);
+				
+		switch(command)
+		{
+			case ISO15693_INVENTORY:
+			{
+				// Build a suitable response to the reader INVENTORY command
+				if(!private)
+				{
+					Dbprintf("INVENTORY");
+					BuildInventoryResponse(uid);
+					TransmitTo15693Reader(ToSend, ToSendMax, &start_time, 0, slow);
+				}
+				else
+				{
+					Dbprintf("INVENTORY (won't answer)");
+				}
+				break;
+			}
+
+			case ISO15693_READBLOCK:
+			{
+				uint8_t resp[7];
+				uint16_t crc;
+				uint8_t block = cmd[2 + (addressed ? 8 : 0)];
+
+				if(!private)
+				{
+					Dbprintf("READBLOCK %d", block);
+
+					resp[0] = ISO15693_NOERROR; 
+					memcpy(&resp[1], &memory[4*block], 4);
+					crc = Iso15693Crc(resp, 5);
+					resp[5] = crc & 0xff;
+					resp[6] = crc >> 8;
+
+					CodeIso15693AsTag(resp, sizeof(resp));
+					TransmitTo15693Reader(ToSend, ToSendMax, &start_time, 0, slow);
+				}
+				else
+				{
+					Dbprintf("READBLOCK %d (won't answer)", block);
+				}
+				break;
+			}
+
+			case 0xB2: /* SLS2S5002_GET_RANDOM_NUMBER */
+			{
+				uint8_t resp[5];
+				uint16_t crc;
+
+				Dbprintf("SLS2S5002: GET RANDOM");
+
+				resp[0] = ISO15693_NOERROR; 
+				resp[1] = 0x00; /* set number to 0x0000 so we get the key in plaintext */
+				resp[2] = 0x00;
+				crc = Iso15693Crc(resp, 3);
+				resp[3] = crc & 0xff;
+				resp[4] = crc >> 8;
+
+				CodeIso15693AsTag(resp, sizeof(resp));
+				TransmitTo15693Reader(ToSend, ToSendMax, &start_time, 0, slow);
+				break;
+			}
+			case 0xB3: /* SLS2S5002_SET_PASSWORD */
+			{
+				uint8_t resp[3];
+				uint16_t crc;
+				uint8_t offset = 3 + (addressed ? 8 : 0);
+				uint32_t pass = (cmd[offset + 1] << 24) | (cmd[offset + 2] << 16) | (cmd[offset + 3] << 8) | (cmd[offset + 4] << 0);
+
+				Dbprintf("SLS2S5002: SET PASSWORD #%02X: 0x%08X", cmd[offset + 0], pass);
+
+				if(pass == 0x5B6EFD7F)
+				{
+					Dbprintf("SLS2S5002: Correct password");
+
+					resp[0] = ISO15693_NOERROR; 
+					crc = Iso15693Crc(resp, 1);
+					resp[1] = crc & 0xff;
+					resp[2] = crc >> 8;
+
+					private = false;
+
+					CodeIso15693AsTag(resp, sizeof(resp));
+					TransmitTo15693Reader(ToSend, ToSendMax, &start_time, 0, slow);
+				}
+				else
+				{
+					Dbprintf("SLS2S5002: Incorrect password");
+				}
+				
+
+				break;
+			}
+			case 0xB4: /* SLS2S5002_WRITE_PASSWORD */
+			{
+				uint8_t resp[3];
+				uint16_t crc;
+				uint8_t offset = 3 + (addressed ? 8 : 0);
+
+				Dbprintf("SLS2S5002: WRITE PASSWORD #%02X: %02X%02X%02X%02X", cmd[offset + 0], cmd[offset + 1], cmd[offset + 2], cmd[offset + 3], cmd[offset + 4]);
+
+				resp[0] = ISO15693_NOERROR; 
+				crc = Iso15693Crc(resp, 1);
+				resp[1] = crc & 0xff;
+				resp[2] = crc >> 8;
+
+				CodeIso15693AsTag(resp, sizeof(resp));
+				TransmitTo15693Reader(ToSend, ToSendMax, &start_time, 0, slow);
+				break;
+			}
+			case 0xB5: /* SLS2S5002_LOCK_PASSWORD */
+			{
+				uint8_t resp[3];
+				uint16_t crc;
+				uint8_t offset = 3 + (addressed ? 8 : 0);
+
+				Dbprintf("SLS2S5002: LOCK PASSWORD #%02X", cmd[offset + 0]);
+
+				resp[0] = ISO15693_NOERROR; 
+				crc = Iso15693Crc(resp, 1);
+				resp[1] = crc & 0xff;
+				resp[2] = crc >> 8;
+
+				CodeIso15693AsTag(resp, sizeof(resp));
+				TransmitTo15693Reader(ToSend, ToSendMax, &start_time, 0, slow);
+				break;
+			}
+			case 0xB9: /* SLS2S5002_DESTROY */
+			{
+				uint8_t resp[3];
+				uint16_t crc;
+
+				Dbprintf("SLS2S5002: DESTROY");
+
+				resp[0] = ISO15693_NOERROR; 
+				crc = Iso15693Crc(resp, 1);
+				resp[1] = crc & 0xff;
+				resp[2] = crc >> 8;
+
+				CodeIso15693AsTag(resp, sizeof(resp));
+				TransmitTo15693Reader(ToSend, ToSendMax, &start_time, 0, slow);
+				break;
+			}
+			case 0xBA: /* SLS2S5002_ENABLE_PRIVACY */
+			{
+				uint8_t resp[3];
+				uint16_t crc;
+
+				Dbprintf("SLS2S5002: ENABLE PRIVACY");
+
+				resp[0] = ISO15693_NOERROR; 
+				crc = Iso15693Crc(resp, 1);
+				resp[1] = crc & 0xff;
+				resp[2] = crc >> 8;
+
+				private = true;
+
+				CodeIso15693AsTag(resp, sizeof(resp));
+				TransmitTo15693Reader(ToSend, ToSendMax, &start_time, 0, slow);
+				break;
+			}
+
+			default:
+			{				
+				break;
+			}
+		}
 	}
 
 	FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
@@ -1690,54 +1859,80 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid) {
 }
 
 
+void SetTag15693Password() {
+
+	LED_A_ON(); 
+
+	uint8_t cmd_get_rnd[]    = {ISO15693_REQ_DATARATE_HIGH, 0xB2, 0x04, 0x00, 0x00 };
+	uint8_t cmd_write_pass[] = {ISO15693_REQ_DATARATE_HIGH, 0xB3, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint16_t crc;
+	int recvlen = 0;
+	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
+	uint32_t eof_time = 0;
+	uint32_t start_time = 0;
+	bool done = false;
+
+	/* setup 'get random number' command */
+	crc = Iso15693Crc(cmd_get_rnd, 3);
+	cmd_get_rnd[3] = crc & 0xff;
+	cmd_get_rnd[4] = crc >> 8;
+
+	while (!done) {
+		switch(BUTTON_HELD(5000)) {
+			case BUTTON_SINGLE_CLICK:
+				LED_C_OFF();
+				break;
+			case BUTTON_HOLD:
+				done = true;
+				break;
+		}
+
+		//Dbprintf("DisablePrivacy: Requesting random number");
+		recvlen = SendDataTag(cmd_get_rnd, sizeof(cmd_get_rnd), true, true, recvbuf, sizeof(recvbuf), start_time, ISO15693_READER_TIMEOUT_WRITE, &eof_time);
+		if (recvlen != 5) {
+			//Dbprintf("DisablePrivacy: Failed to receive (%d)", recvlen);
+		} else {
+			Dbprintf("DisablePrivacy: Received random 0x%02X%02X (%d)", recvbuf[1], recvbuf[2], recvlen);
+
+			start_time = eof_time + DELAY_ISO15693_VICC_TO_VCD_READER;
+
+			/* setup 'set password' command */
+			cmd_write_pass[4] = 0x5B ^ recvbuf[1];
+			cmd_write_pass[5] = 0x6E ^ recvbuf[2];
+			cmd_write_pass[6] = 0xFD ^ recvbuf[1];
+			cmd_write_pass[7] = 0x7F ^ recvbuf[2];
+			
+			crc = Iso15693Crc(cmd_write_pass, 8);
+			cmd_write_pass[8] = crc & 0xff;
+			cmd_write_pass[9] = crc >> 8;
+
+			Dbprintf("DisablePrivacy: Sending password 0x%02X%02X%02X%02X", cmd_write_pass[4], cmd_write_pass[5], cmd_write_pass[6], cmd_write_pass[7]);
+			recvlen = SendDataTag(cmd_write_pass, sizeof(cmd_write_pass), false, true, recvbuf, sizeof(recvbuf), start_time, ISO15693_READER_TIMEOUT_WRITE, &eof_time);
+			if (recvlen != 3) {
+				Dbprintf("DisablePrivacy: Failed to set password (%d)", recvlen);
+			} else {
+				Dbprintf("DisablePrivacy: Successful (%d)", recvlen);
+				LED_C_ON();
+			}
+		}
+		SpinDelay(100);
+	}
+
+	Dbprintf("DisablePrivacy: Finishing");
+	FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+	LED_D_OFF();
+
+	cmd_send(CMD_ACK, recvlen, 0, 0, recvbuf, recvlen);
+	LED_A_OFF();
+	
+	LED_C_OFF();
+}
+
+
 // Since there is no standardized way of reading the AFI out of a tag, we will brute force it
 // (some manufactures offer a way to read the AFI, though)
 void BruteforceIso15693Afi(uint32_t speed) {
-	LED_A_ON();
-
-	uint8_t data[6];
-	uint8_t recv[ISO15693_MAX_RESPONSE_LENGTH];
-	int datalen = 0, recvlen = 0;
-	uint32_t eof_time;
-
-	// first without AFI
-	// Tags should respond without AFI and with AFI=0 even when AFI is active
-
-	data[0] = ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_INVENTORY | ISO15693_REQINV_SLOT1;
-	data[1] = ISO15693_INVENTORY;
-	data[2] = 0; // mask length
-	datalen = Iso15693AddCrc(data,3);
-	uint32_t start_time = GetCountSspClk();
-	recvlen = SendDataTag(data, datalen, true, speed, recv, sizeof(recv), 0, ISO15693_READER_TIMEOUT, &eof_time);
-	start_time = eof_time + DELAY_ISO15693_VICC_TO_VCD_READER;
-	WDT_HIT();
-	if (recvlen>=12) {
-		Dbprintf("NoAFI UID=%s", Iso15693sprintUID(NULL, &recv[2]));
-	}
-
-	// now with AFI
-
-	data[0] = ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_INVENTORY | ISO15693_REQINV_AFI | ISO15693_REQINV_SLOT1;
-	data[1] = ISO15693_INVENTORY;
-	data[2] = 0; // AFI
-	data[3] = 0; // mask length
-
-	for (int i = 0; i < 256; i++) {
-		data[2] = i & 0xFF;
-		datalen = Iso15693AddCrc(data,4);
-		recvlen = SendDataTag(data, datalen, false, speed, recv, sizeof(recv), start_time, ISO15693_READER_TIMEOUT, &eof_time);
-		start_time = eof_time + DELAY_ISO15693_VICC_TO_VCD_READER;
-		WDT_HIT();
-		if (recvlen >= 12) {
-			Dbprintf("AFI=%i UID=%s", i, Iso15693sprintUID(NULL, &recv[2]));
-		}
-	}
-	Dbprintf("AFI Bruteforcing done.");
-
-	FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
-	LED_D_OFF();
-	LED_A_OFF();
-
+	SetTag15693Password();
 }
 
 // Allows to directly send commands to the tag via the client
