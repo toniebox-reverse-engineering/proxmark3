@@ -16,6 +16,7 @@
 void SnoopIso15693(void);
 void AcquireRawAdcSamplesIso15693(void);
 void ReaderIso15693(uint32_t parameter);
+void DisablePrivacySlixIso15693(uint32_t password);
 void SimTagIso15693(uint32_t parameter, uint8_t *uid);
 void BruteforceIso15693Afi(uint32_t speed);
 void DirectTag15693Command(uint32_t datalen,uint32_t speed, uint32_t recv, uint8_t data[]); 

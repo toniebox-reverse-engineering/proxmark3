@@ -1147,6 +1147,10 @@ void UsbPacketReceived(uint8_t *packet, int len)
 			DirectTag15693Command(c->arg[0],c->arg[1],c->arg[2],c->d.asBytes);
 			break;
 					
+		case CMD_ISO_15693_DISABLE_PRIVACY:
+			DisablePrivacySlixIso15693(c->arg[0]);
+			break;	
+					
 		case CMD_ISO_15693_FIND_AFI:
 			BruteforceIso15693Afi(c->arg[0]);
 			break;	
