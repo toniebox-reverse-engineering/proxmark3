@@ -1506,10 +1506,10 @@ void DisablePrivacySlixIso15693(uint32_t password) {
 			start_time = eof_time + DELAY_ISO15693_VICC_TO_VCD_READER;
 
 			/* setup 'set password' command */
-			cmd_write_pass[4] = ((password>>24) &0xFF) ^ recvbuf[1];
-			cmd_write_pass[5] = ((password>>16) &0xFF) ^ recvbuf[2];
-			cmd_write_pass[6] = ((password>>8) &0xFF) ^ recvbuf[1];
-			cmd_write_pass[7] = ((password>>0) &0xFF) ^ recvbuf[2];
+			cmd_write_pass[4] = ((password>>0) &0xFF) ^ recvbuf[1];
+			cmd_write_pass[5] = ((password>>8) &0xFF) ^ recvbuf[2];
+			cmd_write_pass[6] = ((password>>16) &0xFF) ^ recvbuf[1];
+			cmd_write_pass[7] = ((password>>24) &0xFF) ^ recvbuf[2];
 			
 			crc = Iso15693Crc(cmd_write_pass, 8);
 			cmd_write_pass[8] = crc & 0xff;
