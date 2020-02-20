@@ -1260,7 +1260,6 @@ static void BuildInventoryResponse(uint8_t *uid)
 //	return: lenght of received data
 int SendDataTag(uint8_t *send, int sendlen, bool init, int speed, uint8_t *recv, uint16_t max_recv_len, uint32_t start_time) {
 
-	LED_A_ON();
 	LED_B_OFF();
 	LED_C_OFF();
 
@@ -1282,8 +1281,6 @@ int SendDataTag(uint8_t *send, int sendlen, bool init, int speed, uint8_t *recv,
 	if (recv != NULL) {
 		answerLen = GetIso15693AnswerFromTag(recv, max_recv_len, DELAY_ISO15693_VCD_TO_VICC_READER * 2);
 	}
-
-	LED_A_OFF();
 
 	return answerLen;
 }
@@ -1466,11 +1463,9 @@ void ReaderIso15693(uint32_t parameter)
 
 void DisablePrivacySlixIso15693(uint32_t password) {
 
-	LED_A_ON(); 
 
 	uint8_t cmd_get_rnd[]    = {ISO15693_REQ_DATARATE_HIGH, 0xB2, 0x04, 0x00, 0x00 };
 	uint8_t cmd_write_pass[] = {ISO15693_REQ_DATARATE_HIGH, 0xB3, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-	//uint32_t passwords[] = { 0x5B6EFD7F, 0x0F0F0F0F, 0xF0F0F0F0 };
 	uint16_t crc;
 	int recvlen = 0;
 	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
@@ -1479,7 +1474,7 @@ void DisablePrivacySlixIso15693(uint32_t password) {
 	bool done = false;
 
 	/* setup 'get random number' command */
-	crc = Crc(cmd_get_rnd, 3);
+	crc = Iso15693Crc(cmd_get_rnd, 3);
 	cmd_get_rnd[3] = crc & 0xff;
 	cmd_get_rnd[4] = crc >> 8;
 
@@ -1488,8 +1483,8 @@ void DisablePrivacySlixIso15693(uint32_t password) {
 	while (!done) {
 		switch(BUTTON_HELD(5000)) {
 			case BUTTON_SINGLE_CLICK:
-				Dbprintf("DisablePrivacy: Reset 'DONE'-LED (D)");
-				LED_D_OFF();
+				Dbprintf("DisablePrivacy: Reset 'DONE'-LED (A)");
+				LED_A_OFF();
 				break;
 			case BUTTON_HOLD:
 				Dbprintf("DisablePrivacy: Terminating");
@@ -1521,7 +1516,7 @@ void DisablePrivacySlixIso15693(uint32_t password) {
 				Dbprintf("DisablePrivacy: Failed to set password (%d)", recvlen);
 			} else {
 				Dbprintf("DisablePrivacy: Successful (%d)", recvlen);
-				LED_D_ON();
+				LED_A_ON();
 			}
 		}
 		SpinDelay(100);
