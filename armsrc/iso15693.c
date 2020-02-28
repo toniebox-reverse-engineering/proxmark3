@@ -376,12 +376,10 @@ void TransmitTo15693Reader(const uint8_t *cmd, size_t len, uint32_t *start_time,
 typedef struct DecodeTag {
 	enum {
 		STATE_TAG_SOF_LOW,
-		STATE_TAG_SOF_RISING_EDGE,
 		STATE_TAG_SOF_HIGH,
 		STATE_TAG_SOF_HIGH_END,
 		STATE_TAG_RECEIVING_DATA,
-		STATE_TAG_EOF,
-		STATE_TAG_EOF_TAIL
+		STATE_TAG_EOF
 	}         state;
 	int       bitCount;
 	int       posCount;
@@ -396,67 +394,46 @@ typedef struct DecodeTag {
 	uint8_t   *output;
 	int       len;
 	int       sum1, sum2;
-	int       threshold_sof;
-	int       threshold_half;
-	uint16_t  previous_amplitude;
 } DecodeTag_t;
 
 
 static int inline __attribute__((always_inline)) Handle15693SamplesFromTag(uint16_t amplitude, DecodeTag_t *DecodeTag) {
-	switch (DecodeTag->state) {
+	switch(DecodeTag->state) {
 		case STATE_TAG_SOF_LOW:
-			// waiting for a rising edge
-			if (amplitude > NOISE_THRESHOLD + DecodeTag->previous_amplitude) {
+			// waiting for 12 times low (11 times low is accepted as well)
+			if (amplitude < NOISE_THRESHOLD) {
+				DecodeTag->posCount++;
+			} else {
 				if (DecodeTag->posCount > 10) {
-					DecodeTag->threshold_sof = amplitude - DecodeTag->previous_amplitude; // to be divided by 2
-					DecodeTag->threshold_half = 0;
-					DecodeTag->state = STATE_TAG_SOF_RISING_EDGE;
+					DecodeTag->posCount = 1;
+					DecodeTag->sum1 = 0;
+					DecodeTag->state = STATE_TAG_SOF_HIGH;
 				} else {
 					DecodeTag->posCount = 0;
 				}
-			} else {
-				DecodeTag->posCount++;
-				DecodeTag->previous_amplitude = amplitude;
 			}
-			break;
-
-		case STATE_TAG_SOF_RISING_EDGE:
-			if (amplitude > DecodeTag->threshold_sof + DecodeTag->previous_amplitude) { // edge still rising
-				if (amplitude > DecodeTag->threshold_sof + DecodeTag->threshold_sof) { // steeper edge, take this as time reference
-					DecodeTag->posCount = 1;
-				} else {
-					DecodeTag->posCount = 2;
-				}
-				DecodeTag->threshold_sof = (amplitude - DecodeTag->previous_amplitude) / 2;
-			} else {
-				DecodeTag->posCount = 2;
-				DecodeTag->threshold_sof = DecodeTag->threshold_sof/2;
-			}
-			// DecodeTag->posCount = 2;
-			DecodeTag->state = STATE_TAG_SOF_HIGH;
 			break;
 
 		case STATE_TAG_SOF_HIGH:
 			// waiting for 10 times high. Take average over the last 8
-			if (amplitude > DecodeTag->threshold_sof) {
+			if (amplitude > NOISE_THRESHOLD) {
 				DecodeTag->posCount++;
 				if (DecodeTag->posCount > 2) {
-					DecodeTag->threshold_half += amplitude; // keep track of average high value
+					DecodeTag->sum1 += amplitude; // keep track of average high value
 				}
 				if (DecodeTag->posCount == 10) {
-					DecodeTag->threshold_half >>= 2; // (4 times 1/2 average)
+					DecodeTag->sum1 >>= 4;        // calculate half of average high value (8 samples)
 					DecodeTag->state = STATE_TAG_SOF_HIGH_END;
 				}
 			} else { // high phase was too short
 				DecodeTag->posCount = 1;
-				DecodeTag->previous_amplitude = amplitude;
 				DecodeTag->state = STATE_TAG_SOF_LOW;
 			}
 			break;
 
 		case STATE_TAG_SOF_HIGH_END:
-			// check for falling edge
-			if (DecodeTag->posCount == 13 && amplitude < DecodeTag->threshold_sof) {
+			// waiting for a falling edge
+			if (amplitude < DecodeTag->sum1) {   // signal drops below 50% average high: a falling edge
 				DecodeTag->lastBit = SOF_PART1;  // detected 1st part of SOF (12 samples low and 12 samples high)
 				DecodeTag->shiftReg = 0;
 				DecodeTag->bitCount = 0;
@@ -465,18 +442,11 @@ static int inline __attribute__((always_inline)) Handle15693SamplesFromTag(uint1
 				DecodeTag->sum2 = 0;
 				DecodeTag->posCount = 2;
 				DecodeTag->state = STATE_TAG_RECEIVING_DATA;
-				// FpgaDisableTracing(); // DEBUGGING
-				// Dbprintf("amplitude = %d, threshold_sof = %d, threshold_half/4 = %d, previous_amplitude = %d",
-					// amplitude,
-					// DecodeTag->threshold_sof,
-					// DecodeTag->threshold_half/4,
-					// DecodeTag->previous_amplitude); // DEBUGGING
 				LED_C_ON();
 			} else {
 				DecodeTag->posCount++;
 				if (DecodeTag->posCount > 13) { // high phase too long
 					DecodeTag->posCount = 0;
-					DecodeTag->previous_amplitude = amplitude;
 					DecodeTag->state = STATE_TAG_SOF_LOW;
 					LED_C_OFF();
 				}
@@ -484,12 +454,6 @@ static int inline __attribute__((always_inline)) Handle15693SamplesFromTag(uint1
 			break;
 
 		case STATE_TAG_RECEIVING_DATA:
-				// FpgaDisableTracing(); // DEBUGGING
-				// Dbprintf("amplitude = %d, threshold_sof = %d, threshold_half/4 = %d, previous_amplitude = %d",
-					// amplitude,
-					// DecodeTag->threshold_sof,
-					// DecodeTag->threshold_half/4,
-					// DecodeTag->previous_amplitude); // DEBUGGING
 			if (DecodeTag->posCount == 1) {
 				DecodeTag->sum1 = 0;
 				DecodeTag->sum2 = 0;
@@ -500,16 +464,18 @@ static int inline __attribute__((always_inline)) Handle15693SamplesFromTag(uint1
 				DecodeTag->sum2 += amplitude;
 			}
 			if (DecodeTag->posCount == 8) {
-				if (DecodeTag->sum1 > DecodeTag->threshold_half && DecodeTag->sum2 > DecodeTag->threshold_half) { // modulation in both halves
+				int32_t corr_1 = DecodeTag->sum2 - DecodeTag->sum1;
+				int32_t corr_0 = -corr_1;
+				int32_t corr_EOF = (DecodeTag->sum1 + DecodeTag->sum2) / 2;
+				if (corr_EOF > corr_0 && corr_EOF > corr_1) {
 					if (DecodeTag->lastBit == LOGIC0) {  // this was already part of EOF
 						DecodeTag->state = STATE_TAG_EOF;
 					} else {
 						DecodeTag->posCount = 0;
-						DecodeTag->previous_amplitude = amplitude;
 						DecodeTag->state = STATE_TAG_SOF_LOW;
 						LED_C_OFF();
 					}
-				} else if (DecodeTag->sum1 < DecodeTag->threshold_half && DecodeTag->sum2 > DecodeTag->threshold_half) { // modulation in second half
+				} else if (corr_1 > corr_0) {
 					// logic 1
 					if (DecodeTag->lastBit == SOF_PART1) { // still part of SOF
 						DecodeTag->lastBit = SOF_PART2;    // SOF completed
@@ -521,21 +487,20 @@ static int inline __attribute__((always_inline)) Handle15693SamplesFromTag(uint1
 						if (DecodeTag->bitCount == 8) {
 							DecodeTag->output[DecodeTag->len] = DecodeTag->shiftReg;
 							DecodeTag->len++;
-							// if (DecodeTag->shiftReg == 0x12 && DecodeTag->len == 1) FpgaDisableTracing(); // DEBUGGING
 							if (DecodeTag->len > DecodeTag->max_len) {
 								// buffer overflow, give up
+								DecodeTag->posCount = 0;
+								DecodeTag->state = STATE_TAG_SOF_LOW;
 								LED_C_OFF();
-								return true;
 							}
 							DecodeTag->bitCount = 0;
 							DecodeTag->shiftReg = 0;
 						}
 					}
-				} else if (DecodeTag->sum1 > DecodeTag->threshold_half && DecodeTag->sum2 < DecodeTag->threshold_half) { // modulation in first half
+				} else {
 					// logic 0
 					if (DecodeTag->lastBit == SOF_PART1) { // incomplete SOF
 						DecodeTag->posCount = 0;
-						DecodeTag->previous_amplitude = amplitude;
 						DecodeTag->state = STATE_TAG_SOF_LOW;
 						LED_C_OFF();
 					} else {
@@ -545,26 +510,15 @@ static int inline __attribute__((always_inline)) Handle15693SamplesFromTag(uint1
 						if (DecodeTag->bitCount == 8) {
 							DecodeTag->output[DecodeTag->len] = DecodeTag->shiftReg;
 							DecodeTag->len++;
-							// if (DecodeTag->shiftReg == 0x12 && DecodeTag->len == 1) FpgaDisableTracing(); // DEBUGGING
 							if (DecodeTag->len > DecodeTag->max_len) {
 								// buffer overflow, give up
 								DecodeTag->posCount = 0;
-								DecodeTag->previous_amplitude = amplitude;
 								DecodeTag->state = STATE_TAG_SOF_LOW;
 								LED_C_OFF();
 							}
 							DecodeTag->bitCount = 0;
 							DecodeTag->shiftReg = 0;
 						}
-					}
-				} else { // no modulation
-					if (DecodeTag->lastBit == SOF_PART2) { // only SOF (this is OK for iClass)
-						LED_C_OFF();
-						return true;
-					} else {
-						DecodeTag->posCount = 0;
-						DecodeTag->state = STATE_TAG_SOF_LOW;
-						LED_C_OFF();
 					}
 				}
 				DecodeTag->posCount = 0;
@@ -583,42 +537,21 @@ static int inline __attribute__((always_inline)) Handle15693SamplesFromTag(uint1
 				DecodeTag->sum2 += amplitude;
 			}
 			if (DecodeTag->posCount == 8) {
-				if (DecodeTag->sum1 > DecodeTag->threshold_half && DecodeTag->sum2 < DecodeTag->threshold_half) { // modulation in first half
+				int32_t corr_1 = DecodeTag->sum2 - DecodeTag->sum1;
+				int32_t corr_0 = -corr_1;
+				int32_t corr_EOF = (DecodeTag->sum1 + DecodeTag->sum2) / 2;
+				if (corr_EOF > corr_0 || corr_1 > corr_0) {
 					DecodeTag->posCount = 0;
-					DecodeTag->state = STATE_TAG_EOF_TAIL;
-				} else {
-					DecodeTag->posCount = 0;
-					DecodeTag->previous_amplitude = amplitude;
 					DecodeTag->state = STATE_TAG_SOF_LOW;
 					LED_C_OFF();
+				} else {
+					LED_C_OFF();
+					return true;
 				}
 			}
 			DecodeTag->posCount++;
 			break;
 
-		case STATE_TAG_EOF_TAIL:
-			if (DecodeTag->posCount == 1) {
-				DecodeTag->sum1 = 0;
-				DecodeTag->sum2 = 0;
-			}
-			if (DecodeTag->posCount <= 4) {
-				DecodeTag->sum1 += amplitude;
-			} else {
-				DecodeTag->sum2 += amplitude;
-			}
-			if (DecodeTag->posCount == 8) {
-				if (DecodeTag->sum1 < DecodeTag->threshold_half && DecodeTag->sum2 < DecodeTag->threshold_half) { // no modulation in both halves
-					LED_C_OFF();
-					return true;
-				} else {
-					DecodeTag->posCount = 0;
-					DecodeTag->previous_amplitude = amplitude;
-					DecodeTag->state = STATE_TAG_SOF_LOW;
-					LED_C_OFF();
-				}
-			}
-			DecodeTag->posCount++;
-			break;
 	}
 
 	return false;
@@ -626,7 +559,6 @@ static int inline __attribute__((always_inline)) Handle15693SamplesFromTag(uint1
 
 
 static void DecodeTagInit(DecodeTag_t *DecodeTag, uint8_t *data, uint16_t max_len) {
-	DecodeTag->previous_amplitude = MAX_PREVIOUS_AMPLITUDE;
 	DecodeTag->posCount = 0;
 	DecodeTag->state = STATE_TAG_SOF_LOW;
 	DecodeTag->output = data;
@@ -637,7 +569,6 @@ static void DecodeTagInit(DecodeTag_t *DecodeTag, uint8_t *data, uint16_t max_le
 static void DecodeTagReset(DecodeTag_t *DecodeTag) {
 	DecodeTag->posCount = 0;
 	DecodeTag->state = STATE_TAG_SOF_LOW;
-	DecodeTag->previous_amplitude = MAX_PREVIOUS_AMPLITUDE;
 }
 
 
