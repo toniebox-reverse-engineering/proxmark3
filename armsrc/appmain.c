@@ -1151,6 +1151,10 @@ void UsbPacketReceived(uint8_t *packet, int len)
 			DisablePrivacySlixIso15693(c->arg[0]);
 			break;	
 					
+		case CMD_ISO_15693_CHANGE_PASSWORD:
+			ChangePassSlixIso15693(c->arg[0],c->arg[1],c->arg[2]);
+			break;	
+					
 		case CMD_ISO_15693_FIND_AFI:
 			BruteforceIso15693Afi(c->arg[0]);
 			break;	
@@ -1533,7 +1537,7 @@ void  __attribute__((noreturn)) AppMain(void)
 	LCDInit();
 #endif
 
-  byte_t rx[sizeof(UsbCommand)];
+	byte_t rx[sizeof(UsbCommand)];
 	size_t rx_len;
   
 	for(;;) {
@@ -1543,18 +1547,91 @@ void  __attribute__((noreturn)) AppMain(void)
         UsbPacketReceived(rx,rx_len);
       }
     }
-		WDT_HIT();
+	WDT_HIT();
 
+	if (BUTTON_HELD(1000) > 0) {
+		int mode = 0;
+
+		Dbprintf("Starting standalone mode: Menu");
+		LED(0x0F, 0);
+
+		/* wait for button being released before preoceeding evaluation */
+		while(BUTTON_PRESS())
+		{
+			WDT_HIT();
+		}
+
+		while(true) {
+			WDT_HIT();
+			LEDsoff();
+			switch(mode)
+			{
+				case 0:
+					LED_A_ON();
+					break;
+				case 1:
+					LED_B_ON();
+					break;
+				case 2:
+					LED_C_ON();
+					break;
+				case 3:
+					LED_D_ON();
+					break;
+			}
+			
+			switch(BUTTON_HELD(1000)) {
+
+				case BUTTON_SINGLE_CLICK:
+					mode++;
+					mode %= 4;
+					Dbprintf(" Menu #%d", mode);
+					break;
+
+				case BUTTON_HOLD:
+					Dbprintf(" Execute #%d", mode);
+					LEDsoff();
+					while(BUTTON_PRESS())
+					{
+						WDT_HIT();
+					}
+
+					switch(mode)
+					{
+						case 0:
+							ChangePassSlixIso15693(4, 0, 0x0F0F0F0F);
+							break;
+						case 1:
+							DisablePrivacySlixIso15693(0x0F0F0F0F);
+							break;
+						case 2:
+							break;
+						case 3:
+							break;
+					}
+					LEDsoff();
+					while(BUTTON_PRESS())
+					{
+						WDT_HIT();
+					}
+					break;
+
+				default:
+					SpinDelay(50);
+					continue;
+			}
+		}
+	}
 #ifdef WITH_LF_StandAlone
 #ifndef WITH_ISO14443a_StandAlone
-		if (BUTTON_HELD(1000) > 0)
-			SamyRun();
+	if (BUTTON_HELD(1000) > 0)
+		SamyRun();
 #endif
 #endif
 #ifdef WITH_ISO14443a
 #ifdef WITH_ISO14443a_StandAlone
-		if (BUTTON_HELD(1000) > 0)
-			StandAloneMode14a();
+	if (BUTTON_HELD(1000) > 0)
+		StandAloneMode14a();
 #endif
 #endif
 	}

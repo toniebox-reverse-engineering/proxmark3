@@ -309,10 +309,52 @@ int CmdHF15Afi(const char *Cmd)
 	return 0;
 }
 
+
+
+int CmdHF15SlixChangePass(const char *Cmd)
+{
+	char cmdp = param_getchar(Cmd, 0);
+	uint8_t old_pass[4] = {0x00};
+	uint8_t new_pass[4] = {0x00};
+	uint8_t pass_id[1] = {0x00};
+
+	if (cmdp == 'h' || cmdp == 'H') {
+		PrintAndLog("Usage:  hf 15 slix_change_pass <pass_id> <old_pass> <new_pass>");
+		PrintAndLog("");
+		PrintAndLog("     pass_id 04: privacy, 08: destroy, 10: EAS/AFI");
+		PrintAndLog("");
+		PrintAndLog("     sample: hf 15 slix_change_pass 04 00000000 0F0F0F0F");
+		return 0;
+	}
+
+	if (param_gethex(Cmd, 0, pass_id, 2)) {
+		PrintAndLog("pass_id must include 2 HEX symbols");
+		return 0;
+	}
+	if (param_gethex(Cmd, 1, old_pass, 8)) {
+		PrintAndLog("pass must include 8 HEX symbols");
+		return 0;
+	}
+	if (param_gethex(Cmd, 2, new_pass, 8)) {
+		PrintAndLog("pass must include 8 HEX symbols");
+		return 0;
+	}
+	
+	PrintAndLog("Setting new password %02X%02X%02X%02X for ID 0x%02X",new_pass[0],new_pass[1],new_pass[2],new_pass[3], *pass_id);
+	
+	UsbCommand c = {CMD_ISO_15693_CHANGE_PASSWORD, {*pass_id, 0, 0}};
+	
+	memcpy(&c.arg[1],old_pass,4);
+	memcpy(&c.arg[2],new_pass,4);
+
+	SendCommand(&c);
+	return 0;
+}
+
 int CmdHF15SlixDisablePrivacy(const char *Cmd)
 {
 	char cmdp = param_getchar(Cmd, 0);
-	uint8_t pass[8] = {0x00};
+	uint8_t pass[4] = {0x00};
 
 	if (cmdp == 'h' || cmdp == 'H') {
 		PrintAndLog("Usage:  hf 15 slix_disable_privacy <pass>");
@@ -329,7 +371,7 @@ int CmdHF15SlixDisablePrivacy(const char *Cmd)
 	PrintAndLog("Disabling privacy mode using password %02X%02X%02X%02X",pass[0],pass[1],pass[2],pass[3]);
 	
 	UsbCommand c = {CMD_ISO_15693_DISABLE_PRIVACY, {0, 0, 0}};
-	memcpy(&c.arg[0],pass,8);
+	memcpy(&c.arg[0],pass,4);
 
 	SendCommand(&c);
 	return 0;
@@ -414,6 +456,7 @@ static command_t CommandTable15[] =
 	{"sim",     CmdHF15Sim,     0, "Fake an ISO15693 tag"},
 	{"cmd",     CmdHF15Cmd,     0, "Send direct commands to ISO15693 tag"},
 	{"slix_disable_privacy",     CmdHF15SlixDisablePrivacy,     0, "Disable privacy mode on SLIX ISO15693 tag"},
+	{"slix_change_pass",     CmdHF15SlixChangePass,     0, "Change password of SLIX ISO15693 tag"},
 	{"findafi", CmdHF15Afi,     0, "Brute force AFI of an ISO15693 tag"},
 	{"dumpmemory", CmdHF15DumpMem,     0, "Read all memory pages of an ISO15693 tag"},
 	{"csetuid",	CmdHF15CSetUID,	0,	"Set UID for magic Chinese card"},

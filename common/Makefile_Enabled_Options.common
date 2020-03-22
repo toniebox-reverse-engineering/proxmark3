@@ -3,8 +3,7 @@
 #  All definition lines except the last must end in a \
 #  
 #BEGIN
-APP_CFLAGS += -DWITH_ISO14443a_StandAlone \
-        -DWITH_LF\
+APP_CFLAGS += -DWITH_LF\
         -DWITH_ISO15693 \
         -DWITH_ISO14443a \
         -DWITH_ISO14443b \

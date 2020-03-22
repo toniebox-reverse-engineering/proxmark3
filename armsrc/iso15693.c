@@ -1461,9 +1461,120 @@ void ReaderIso15693(uint32_t parameter)
 	LED_A_OFF();
 }
 
+void ChangePassSlixIso15693(uint32_t pass_id, uint32_t old_password, uint32_t password) {
+
+	uint8_t cmd_inventory[]  = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_INVENTORY | ISO15693_REQINV_SLOT1, 0x01, 0x00, 0x00, 0x00 };
+	uint8_t cmd_get_rnd[]    = {ISO15693_REQ_DATARATE_HIGH, 0xB2, 0x04, 0x00, 0x00 };
+	uint8_t cmd_set_pass[]   = {ISO15693_REQ_DATARATE_HIGH, 0xB3, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t cmd_write_pass[] = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_ADDRESS, 0xB4, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint16_t crc;
+	int recvlen = 0;
+	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
+	uint32_t start_time = 0;
+	bool done = false;
+
+	/* setup 'get random number' command */
+	crc = Iso15693Crc(cmd_get_rnd, 3);
+	cmd_get_rnd[3] = crc & 0xff;
+	cmd_get_rnd[4] = crc >> 8;
+
+	Dbprintf("ChangePass: Press button set password, long-press to terminate.");
+
+	while (!done) {
+		switch(BUTTON_HELD(1000)) {
+			case BUTTON_SINGLE_CLICK:
+				Dbprintf("ChangePass: Reset 'DONE'-LED (A)");
+				LED_A_OFF();
+				LED_B_OFF();
+				LED_C_OFF();
+				break;
+			case BUTTON_HOLD:
+				Dbprintf("ChangePass: Terminating");
+				done = true;
+				break;
+			default:
+				SpinDelay(50);
+				continue;
+		}
+
+		if(done)
+		{
+			break;
+		}
+
+		recvlen = SendDataTag(cmd_get_rnd, sizeof(cmd_get_rnd), true, true, recvbuf, sizeof(recvbuf), start_time);
+		if (recvlen != 5) {
+			LED_C_ON();
+		} else {
+			Dbprintf("ChangePass: Received random 0x%02X%02X (%d)", recvbuf[1], recvbuf[2], recvlen);
+
+			/* setup 'set password' command */
+			cmd_set_pass[4] = ((old_password>>0) &0xFF) ^ recvbuf[1];
+			cmd_set_pass[5] = ((old_password>>8) &0xFF) ^ recvbuf[2];
+			cmd_set_pass[6] = ((old_password>>16) &0xFF) ^ recvbuf[1];
+			cmd_set_pass[7] = ((old_password>>24) &0xFF) ^ recvbuf[2];
+			
+			crc = Iso15693Crc(cmd_set_pass, 8);
+			cmd_set_pass[8] = crc & 0xff;
+			cmd_set_pass[9] = crc >> 8;
+
+			Dbprintf("ChangePass: Sending old password to end privacy mode", cmd_set_pass[4], cmd_set_pass[5], cmd_set_pass[6], cmd_set_pass[7]);
+			recvlen = SendDataTag(cmd_set_pass, sizeof(cmd_set_pass), false, true, recvbuf, sizeof(recvbuf), start_time);
+			if (recvlen != 3) {
+				Dbprintf("ChangePass: Failed to set password (%d)", recvlen);
+				LED_B_ON();
+			} else {
+				crc = Iso15693Crc(cmd_inventory, 3);
+				cmd_inventory[3] = crc & 0xff;
+				cmd_inventory[4] = crc >> 8;
+
+				Dbprintf("ChangePass: Searching for tag...");
+				recvlen = SendDataTag(cmd_inventory, sizeof(cmd_inventory), false, true, recvbuf, sizeof(recvbuf), start_time);
+				if (recvlen != 12) {
+					Dbprintf("ChangePass: Failed to read inventory (%d)", recvlen);
+					LED_B_ON();
+					LED_C_ON();
+				} else {
+
+					Dbprintf("ChangePass: Answer from %02X%02X%02X%02X%02X%02X%02X%02X", recvbuf[9], recvbuf[8], recvbuf[7], recvbuf[6], recvbuf[5], recvbuf[4], recvbuf[3], recvbuf[2]);
+
+					memcpy(&cmd_write_pass[3], &recvbuf[2], 8);
+
+					cmd_write_pass[8+3] = pass_id;
+					cmd_write_pass[8+4] = (password>>0);
+					cmd_write_pass[8+5] = (password>>8);
+					cmd_write_pass[8+6] = (password>>16);
+					cmd_write_pass[8+7] = (password>>24);
+					
+					crc = Iso15693Crc(cmd_write_pass, 8+8);
+					cmd_write_pass[8+8] = crc & 0xff;
+					cmd_write_pass[8+9] = crc >> 8;
+
+					Dbprintf("ChangePass: Sending new password 0x%02X%02X%02X%02X for ID %02X", cmd_write_pass[4], cmd_write_pass[5], cmd_write_pass[6], cmd_write_pass[7], pass_id);
+
+					recvlen = SendDataTag(cmd_write_pass, sizeof(cmd_write_pass), false, true, recvbuf, sizeof(recvbuf), start_time);
+					if (recvlen != 3) {
+						Dbprintf("ChangePass: Failed to set new password (%d)", recvlen);
+					} else {
+						Dbprintf("ChangePass: Successful (%d)", recvlen);
+					}
+					LED_A_ON();
+				}
+			}
+		}
+	}
+
+	Dbprintf("ChangePass: Finishing");
+	FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+
+	cmd_send(CMD_ACK, recvlen, 0, 0, recvbuf, recvlen);
+	LED_A_OFF();
+	LED_B_OFF();
+	LED_C_OFF();
+	LED_D_OFF();
+}
+
 void DisablePrivacySlixIso15693(uint32_t password) {
-
-
 	uint8_t cmd_get_rnd[]    = {ISO15693_REQ_DATARATE_HIGH, 0xB2, 0x04, 0x00, 0x00 };
 	uint8_t cmd_write_pass[] = {ISO15693_REQ_DATARATE_HIGH, 0xB3, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 	uint16_t crc;
