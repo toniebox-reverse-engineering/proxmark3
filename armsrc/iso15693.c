@@ -1481,6 +1481,7 @@ void ChangePassSlixIso15693(uint32_t pass_id, uint32_t old_password, uint32_t pa
 	Dbprintf("ChangePass: Press button set password, long-press to terminate.");
 
 	while (!done) {
+		LED_D_ON();
 		switch(BUTTON_HELD(1000)) {
 			case BUTTON_SINGLE_CLICK:
 				Dbprintf("ChangePass: Reset 'DONE'-LED (A)");
@@ -1589,23 +1590,34 @@ void DisablePrivacySlixIso15693(uint32_t password) {
 	cmd_get_rnd[3] = crc & 0xff;
 	cmd_get_rnd[4] = crc >> 8;
 
-	Dbprintf("DisablePrivacy: Press button to reset 'DONE'-LED (D), long-press to terminate.");
+	Dbprintf("DisablePrivacy: Press button to reveal tag, long-press to terminate.");
 
 	while (!done) {
-		switch(BUTTON_HELD(5000)) {
+		LED_D_ON();
+		switch(BUTTON_HELD(1000)) {
 			case BUTTON_SINGLE_CLICK:
 				Dbprintf("DisablePrivacy: Reset 'DONE'-LED (A)");
 				LED_A_OFF();
+				LED_B_OFF();
+				LED_C_OFF();
 				break;
 			case BUTTON_HOLD:
 				Dbprintf("DisablePrivacy: Terminating");
 				done = true;
 				break;
+			default:
+				SpinDelay(50);
+				continue;
+		}
+
+		if(done)
+		{
+			break;
 		}
 
 		recvlen = SendDataTag(cmd_get_rnd, sizeof(cmd_get_rnd), true, true, recvbuf, sizeof(recvbuf), start_time);
 		if (recvlen != 5) {
-			//Dbprintf("DisablePrivacy: Failed to receive (%d)", recvlen);
+			LED_C_ON();
 		} else {
 			Dbprintf("DisablePrivacy: Received random 0x%02X%02X (%d)", recvbuf[1], recvbuf[2], recvlen);
 
@@ -1625,12 +1637,12 @@ void DisablePrivacySlixIso15693(uint32_t password) {
 			recvlen = SendDataTag(cmd_write_pass, sizeof(cmd_write_pass), false, true, recvbuf, sizeof(recvbuf), start_time);
 			if (recvlen != 3) {
 				Dbprintf("DisablePrivacy: Failed to set password (%d)", recvlen);
+				LED_B_ON();
 			} else {
 				Dbprintf("DisablePrivacy: Successful (%d)", recvlen);
 				LED_A_ON();
 			}
 		}
-		SpinDelay(100);
 	}
 
 	Dbprintf("DisablePrivacy: Finishing");

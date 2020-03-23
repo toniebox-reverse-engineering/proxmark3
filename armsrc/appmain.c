@@ -1551,6 +1551,8 @@ void  __attribute__((noreturn)) AppMain(void)
 
 	if (BUTTON_HELD(1000) > 0) {
 		int mode = 0;
+		bool done = false;
+		const char *modes[] = { "Set password", "Reveal tag", "unused", "unused", "Quit standalone" };
 
 		Dbprintf("Starting standalone mode: Menu");
 		LED(0x0F, 0);
@@ -1561,8 +1563,10 @@ void  __attribute__((noreturn)) AppMain(void)
 			WDT_HIT();
 		}
 
-		while(true) {
+		while(!done) {
+			SpinDelay(50);
 			WDT_HIT();
+
 			LEDsoff();
 			switch(mode)
 			{
@@ -1578,14 +1582,20 @@ void  __attribute__((noreturn)) AppMain(void)
 				case 3:
 					LED_D_ON();
 					break;
+				case 4:
+					LED_A_ON();
+					LED_B_ON();
+					LED_C_ON();
+					LED_D_ON();
+					break;
 			}
-			
+
 			switch(BUTTON_HELD(1000)) {
 
 				case BUTTON_SINGLE_CLICK:
 					mode++;
-					mode %= 4;
-					Dbprintf(" Menu #%d", mode);
+					mode %= 5;
+					Dbprintf(" Menu #%d: %s", mode, modes[mode]);
 					break;
 
 				case BUTTON_HOLD:
@@ -1608,10 +1618,14 @@ void  __attribute__((noreturn)) AppMain(void)
 							break;
 						case 3:
 							break;
+						case 4:
+							done = true;
+							break;
 					}
 					LEDsoff();
 					while(BUTTON_PRESS())
 					{
+						SpinDelay(50);
 						WDT_HIT();
 					}
 					break;
