@@ -1664,7 +1664,21 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 	bool private = true;
 	bool done = false;
 	bool debug = false;
+	bool passive = false;
+	uint32_t privacy_pass = 0x5B6EFD7F;
 
+	for(int pos = 0; pos < 8; pos++)
+	{
+		if(uid[pos] != 0)
+		{
+			break;
+		}
+		if(pos == 7)
+		{
+			passive = true;
+			privacy_pass = 0xDEADBEEF;
+		}
+	}
 	LEDsoff();
 	LED_A_ON();
 
@@ -1682,7 +1696,7 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 
 	// Listen to reader
 	while (!done) {
-		switch(BUTTON_HELD(5000)) {
+		switch(BUTTON_HELD(1000)) {
 			case BUTTON_SINGLE_CLICK:
 				Dbprintf("SimTag: Reset 'DONE'-LED (D)");
 				LED_D_OFF();
@@ -1702,7 +1716,7 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 
 		start_time = eof_time + DELAY_ISO15693_VCD_TO_VICC_SIM - DELAY_ARM_TO_READER_SIM;
 
-		if(debug) {
+		if(debug || passive) {
 			Dbprintf("%d bytes read from reader:", cmd_len);
 			Dbhexdump(cmd_len, cmd, false);
 		}
@@ -1747,7 +1761,7 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 					resp[5] = crc & 0xff;
 					resp[6] = crc >> 8;
 
-			    	CodeIso15693AsTag(resp, sizeof(resp));
+					CodeIso15693AsTag(resp, sizeof(resp));
 					TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
 				}
 				else
@@ -1771,8 +1785,11 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 				resp[3] = crc & 0xff;
 				resp[4] = crc >> 8;
 
-				CodeIso15693AsTag(resp, sizeof(resp));
-				TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				if(!passive)
+				{
+					CodeIso15693AsTag(resp, sizeof(resp));
+					TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				}
 				break;
 			}
 
@@ -1785,7 +1802,7 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 
 				Dbprintf("SLS2S5002: SET PASSWORD #%02X: 0x%08X", cmd[offset + 0], pass);
 
-				if(pass == 0x5B6EFD7F)
+				if(pass == privacy_pass)
 				{
 					Dbprintf("SLS2S5002: Correct password");
 
@@ -1803,7 +1820,6 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 				{
 					Dbprintf("SLS2S5002: Incorrect password");
 				}
-				
 
 				break;
 			}
@@ -1816,13 +1832,16 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 
 				Dbprintf("SLS2S5002: WRITE PASSWORD #%02X: %02X%02X%02X%02X", cmd[offset + 0], cmd[offset + 1], cmd[offset + 2], cmd[offset + 3], cmd[offset + 4]);
 
-				resp[0] = ISO15693_NOERROR; 
-				crc = Iso15693Crc(resp, 1);
-				resp[1] = crc & 0xff;
-				resp[2] = crc >> 8;
+				if(!private)
+				{
+					resp[0] = ISO15693_NOERROR; 
+					crc = Iso15693Crc(resp, 1);
+					resp[1] = crc & 0xff;
+					resp[2] = crc >> 8;
 
-				CodeIso15693AsTag(resp, sizeof(resp));
-				TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+					CodeIso15693AsTag(resp, sizeof(resp));
+					TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				}
 				break;
 			}
 
@@ -1834,13 +1853,16 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 
 				Dbprintf("SLS2S5002: LOCK PASSWORD #%02X", cmd[offset + 0]);
 
-				resp[0] = ISO15693_NOERROR; 
-				crc = Iso15693Crc(resp, 1);
-				resp[1] = crc & 0xff;
-				resp[2] = crc >> 8;
+				if(!private)
+				{
+					resp[0] = ISO15693_NOERROR; 
+					crc = Iso15693Crc(resp, 1);
+					resp[1] = crc & 0xff;
+					resp[2] = crc >> 8;
 
-				CodeIso15693AsTag(resp, sizeof(resp));
-				TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+					CodeIso15693AsTag(resp, sizeof(resp));
+					TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				}
 				break;
 			}
 
@@ -1851,13 +1873,16 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 
 				Dbprintf("SLS2S5002: DESTROY. POOOOF!");
 
-				resp[0] = ISO15693_NOERROR; 
-				crc = Iso15693Crc(resp, 1);
-				resp[1] = crc & 0xff;
-				resp[2] = crc >> 8;
+				if(!private)
+				{
+					resp[0] = ISO15693_NOERROR; 
+					crc = Iso15693Crc(resp, 1);
+					resp[1] = crc & 0xff;
+					resp[2] = crc >> 8;
 
-				CodeIso15693AsTag(resp, sizeof(resp));
-				TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+					CodeIso15693AsTag(resp, sizeof(resp));
+					TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				}
 				break;
 			}
 
@@ -1868,20 +1893,25 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 
 				Dbprintf("SLS2S5002: ENABLE PRIVACY");
 
-				resp[0] = ISO15693_NOERROR; 
-				crc = Iso15693Crc(resp, 1);
-				resp[1] = crc & 0xff;
-				resp[2] = crc >> 8;
+				if(!private)
+				{
+					resp[0] = ISO15693_NOERROR; 
+					crc = Iso15693Crc(resp, 1);
+					resp[1] = crc & 0xff;
+					resp[2] = crc >> 8;
 
-				private = true;
+					private = true;
 
-				CodeIso15693AsTag(resp, sizeof(resp));
-				TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+					CodeIso15693AsTag(resp, sizeof(resp));
+					TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				}
 				break;
 			}
 
 			default:
-			{				
+			{			
+				Dbprintf("SLS2S5002: unknown command 0x%02X", command);
+	
 				break;
 			}
 		}

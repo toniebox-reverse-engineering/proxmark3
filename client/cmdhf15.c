@@ -272,20 +272,20 @@ int CmdHF15Sim(const char *Cmd)
 
 	//E0 16 24 00 00 00 00 00
 	if (cmdp == 'h' || cmdp == 'H') {
-		PrintAndLog("Usage:  hf 15 sim <UID> <memory>");
+		PrintAndLog("Usage:  hf 15 sim <UID> [<memory>]");
 		PrintAndLog("");
 		PrintAndLog("     sample: hf 15 sim E016240000000000");
+		PrintAndLog("             hf 15 sim E016240000000000 0001020304..1D1E1F");
 		return 0;
 	}
 
 	if (param_gethex(Cmd, 0, uid, 16)) {
-		PrintAndLog("UID must include 16 HEX symbols");
+		PrintAndLog("UID must have 8 hex bytes for the UID");
 		return 0;
 	}
 	
 	if (param_gethex(Cmd, 1, memory, 64)) {
-		PrintAndLog("memory must include 64 HEX symbols");
-		return 0;
+		PrintAndLog("you should include 32 hex bytes for the tag memory");
 	}
 	
 	PrintAndLog("Starting simulating UID %02X %02X %02X %02X %02X %02X %02X %02X",
