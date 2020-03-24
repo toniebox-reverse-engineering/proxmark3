@@ -1552,7 +1552,7 @@ void  __attribute__((noreturn)) AppMain(void)
 	if (BUTTON_HELD(1000) > 0) {
 		int mode = 0;
 		bool done = false;
-		const char *modes[] = { "Set password", "Reveal tag", "unused", "unused", "Quit standalone" };
+		const char *modes[] = { "Set password", "Reveal tag", "Lock password", "unused", "Quit standalone" };
 
 		Dbprintf("Starting standalone mode: Menu");
 		LED(0x0F, 0);
@@ -1609,12 +1609,13 @@ void  __attribute__((noreturn)) AppMain(void)
 					switch(mode)
 					{
 						case 0:
-							ChangePassSlixIso15693(4, 0, 0x0F0F0F0F);
+							ChangePassSlixIso15693(4, 0, 0x7FFD6E5B); //0x0F0F0F0F
 							break;
 						case 1:
-							DisablePrivacySlixIso15693(0x0F0F0F0F);
+							DisablePrivacySlixIso15693(0x7FFD6E5B); //0x0F0F0F0F
 							break;
 						case 2:
+							LockPassSlixIso15693(4, 0x7FFD6E5B); //0x0F0F0F0F
 							break;
 						case 3:
 							break;
