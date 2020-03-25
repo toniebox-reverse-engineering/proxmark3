@@ -16,9 +16,11 @@
 void SnoopIso15693(void);
 void AcquireRawAdcSamplesIso15693(void);
 void ReaderIso15693(uint32_t parameter);
-void ChangePassSlixIso15693(uint32_t pass_id, uint32_t old_password, uint32_t password);
-void LockPassSlixIso15693(uint32_t pass_id, uint32_t password);
-void DisablePrivacySlixIso15693(uint32_t password);
+
+void StressSlixLIso15693(uint32_t password);
+void ChangePassSlixLIso15693(uint32_t pass_id, uint32_t old_password, uint32_t password);
+void LockPassSlixLIso15693(uint32_t pass_id, uint32_t password);
+void DisablePrivacySlixLIso15693(uint32_t password);
 void SimTagIso15693(uint32_t parameter, uint8_t *uid);
 void BruteforceIso15693Afi(uint32_t speed);
 void DirectTag15693Command(uint32_t datalen,uint32_t speed, uint32_t recv, uint8_t data[]); 

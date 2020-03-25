@@ -1461,7 +1461,7 @@ void ReaderIso15693(uint32_t parameter)
 	LED_A_OFF();
 }
 
-void ChangePassSlixIso15693(uint32_t pass_id, uint32_t old_password, uint32_t password) {
+void ChangePassSlixLIso15693(uint32_t pass_id, uint32_t old_password, uint32_t password) {
 
 	uint8_t cmd_inventory[]  = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_INVENTORY | ISO15693_REQINV_SLOT1, 0x01, 0x00, 0x00, 0x00 };
 	uint8_t cmd_get_rnd[]    = {ISO15693_REQ_DATARATE_HIGH, 0xB2, 0x04, 0x00, 0x00 };
@@ -1575,7 +1575,264 @@ void ChangePassSlixIso15693(uint32_t pass_id, uint32_t old_password, uint32_t pa
 	LED_D_OFF();
 }
 
-void LockPassSlixIso15693(uint32_t pass_id, uint32_t password) {
+#define SLIX_ERR_OK      0
+#define SLIX_ERR_NORESP  1
+#define SLIX_ERR_INVPASS 2
+
+bool GetRandomSlixLIso15693(uint8_t *rnd)
+{
+	uint8_t cmd_get_rnd[] = {ISO15693_REQ_DATARATE_HIGH, 0xB2, 0x04, 0x00, 0x00 };
+	uint16_t crc;
+	int recvlen = 0;
+	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
+
+	/* setup 'get random number' command */
+	crc = Iso15693Crc(cmd_get_rnd, 3);
+	cmd_get_rnd[3] = crc & 0xff;
+	cmd_get_rnd[4] = crc >> 8;
+
+	recvlen = SendDataTag(cmd_get_rnd, sizeof(cmd_get_rnd), false, true, recvbuf, sizeof(recvbuf), 0);
+	if (recvlen != 5) {
+		return false;
+	}
+
+	if(rnd) {
+		memcpy(rnd, &recvbuf[1], 2);
+	}
+	return true;
+}
+
+uint32_t SetPassSlixLIso15693(uint8_t pass_id, uint32_t password)
+{
+	uint8_t cmd_set_pass[] = {ISO15693_REQ_DATARATE_HIGH, 0xB3, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint16_t crc;
+	int recvlen = 0;
+	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
+
+	uint8_t rnd[2];
+	if (!GetRandomSlixLIso15693(rnd)) {
+		return SLIX_ERR_NORESP;
+	}
+
+	/* setup 'set password' command */
+	cmd_set_pass[3] = pass_id;
+	cmd_set_pass[4] = ((password>>0) &0xFF) ^ rnd[0];
+	cmd_set_pass[5] = ((password>>8) &0xFF) ^ rnd[1];
+	cmd_set_pass[6] = ((password>>16) &0xFF) ^ rnd[0];
+	cmd_set_pass[7] = ((password>>24) &0xFF) ^ rnd[1];
+	
+	crc = Iso15693Crc(cmd_set_pass, 8);
+	cmd_set_pass[8] = crc & 0xff;
+	cmd_set_pass[9] = crc >> 8;
+
+	recvlen = SendDataTag(cmd_set_pass, sizeof(cmd_set_pass), false, true, recvbuf, sizeof(recvbuf), 0);
+	if (recvlen != 3) {
+		return SLIX_ERR_INVPASS;
+	} 
+
+	return SLIX_ERR_OK;
+}
+
+bool GetInventoryIso15693(uint8_t *uid)
+{
+	uint8_t cmd_inventory[] = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_INVENTORY | ISO15693_REQINV_SLOT1, 0x01, 0x00, 0x00, 0x00 };
+	uint16_t crc;
+	int recvlen = 0;
+	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
+
+	crc = Iso15693Crc(cmd_inventory, 3);
+	cmd_inventory[3] = crc & 0xff;
+	cmd_inventory[4] = crc >> 8;
+
+	recvlen = SendDataTag(cmd_inventory, sizeof(cmd_inventory), false, true, recvbuf, sizeof(recvbuf), 0);
+	if (recvlen != 12) {
+		return false;
+	}
+
+	memcpy(uid, &recvbuf[2], 8);
+	return true;
+}
+
+uint32_t EnablePrivacySlixLIso15693(uint8_t *uid, uint32_t password)
+{
+	uint8_t cmd_enable_priv[] = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_ADDRESS, 0xBA, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint16_t crc;
+	int recvlen = 0;
+	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
+
+	uint8_t rnd[2];
+	if (!GetRandomSlixLIso15693(rnd)) {
+		return SLIX_ERR_NORESP;
+	}
+
+	memcpy(&cmd_enable_priv[3], uid, 8);
+	cmd_enable_priv[11] = ((password>>0) &0xFF) ^ rnd[0];
+	cmd_enable_priv[12] = ((password>>8) &0xFF) ^ rnd[1];
+	cmd_enable_priv[13] = ((password>>16) &0xFF) ^ rnd[0];
+	cmd_enable_priv[14] = ((password>>24) &0xFF) ^ rnd[1];
+
+	crc = Iso15693Crc(cmd_enable_priv, 15);
+	cmd_enable_priv[15] = crc & 0xff;
+	cmd_enable_priv[16] = crc >> 8;
+
+	recvlen = SendDataTag(cmd_enable_priv, sizeof(cmd_enable_priv), false, true, recvbuf, sizeof(recvbuf), 0);
+	if (recvlen != 3) {
+		return SLIX_ERR_INVPASS;
+	}
+
+	return SLIX_ERR_OK;
+}
+
+uint32_t DestroySlixLIso15693(uint8_t *uid, uint32_t password)
+{
+	uint8_t cmd_enable_priv[] = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_ADDRESS, 0xB9, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint16_t crc;
+	int recvlen = 0;
+	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
+
+	uint8_t rnd[2];
+	if (!GetRandomSlixLIso15693(rnd)) {
+		return SLIX_ERR_NORESP;
+	}
+
+	memcpy(&cmd_enable_priv[3], uid, 8);
+	cmd_enable_priv[11] = ((password>>0) &0xFF) ^ rnd[0];
+	cmd_enable_priv[12] = ((password>>8) &0xFF) ^ rnd[1];
+	cmd_enable_priv[13] = ((password>>16) &0xFF) ^ rnd[0];
+	cmd_enable_priv[14] = ((password>>24) &0xFF) ^ rnd[1];
+
+	crc = Iso15693Crc(cmd_enable_priv, 15);
+	cmd_enable_priv[15] = crc & 0xff;
+	cmd_enable_priv[16] = crc >> 8;
+
+	recvlen = SendDataTag(cmd_enable_priv, sizeof(cmd_enable_priv), false, true, recvbuf, sizeof(recvbuf), 0);
+	if (recvlen != 3) {
+		return SLIX_ERR_INVPASS;
+	}
+
+	return SLIX_ERR_OK;
+}
+
+void StressSlixLIso15693(uint32_t password)
+{
+	uint32_t loops = 0;
+	bool done = false;
+	uint8_t uid[8];
+
+	Dbprintf("Stress SLIX-L: Stressing tag. Password 0x%08X", password);
+	Dbprintf("Stress SLIX-L: Press button to terminate.");
+
+	LED_D_ON();
+	Iso15693InitReader();
+
+	while (!done) {
+		LED_D_ON();
+		WDT_HIT();
+			
+		switch(BUTTON_HELD(1000)) {
+			case BUTTON_HOLD:
+				Dbprintf("Stress SLIX-L: Terminating");
+				done = true;
+				continue;
+
+			default:
+				break;
+		}
+
+		if(!GetRandomSlixLIso15693(NULL)) {	
+			SpinDelay(50);
+			continue;
+		}
+		
+		if(GetInventoryIso15693(uid)) {	
+			Dbprintf(" [i] Tag %02X%02X%02X%02X%02X%02X%02X%02X was responding when started", uid[7], uid[6], uid[5], uid[4], uid[3], uid[2], uid[1], uid[0]);
+		} else {
+			Dbprintf(" [i] Tag was in privacy mode when started");
+		}
+
+		loops = 0;
+		bool term = false;
+		while(!term) {
+
+			if (BUTTON_PRESS()) {
+				Dbprintf(" [i] Terminating");
+				term = true;
+				continue;
+			}
+
+			Dbprintf("Loop #%d", ++loops);
+			Dbprintf(" [x] Set password");
+
+			switch(SetPassSlixLIso15693(4, password)) {
+				case SLIX_ERR_NORESP:
+					Dbprintf("   [i] No tag found");
+					LED_C_ON();
+					term = true;
+					continue;
+
+				case SLIX_ERR_INVPASS:
+					Dbprintf("   [E] Password was not accepted");
+					LED_B_ON();
+					term = true;
+					continue;
+			}
+			
+			Dbprintf(" [x] Scan for tag");
+			if(GetInventoryIso15693(uid)) {	
+				Dbprintf("   [i] Tag %02X%02X%02X%02X%02X%02X%02X%02X is responding.", uid[7], uid[6], uid[5], uid[4], uid[3], uid[2], uid[1], uid[0]);
+			} else {
+				Dbprintf("   [E] Tag did not appear. Invalid password?");
+				LED_B_ON();
+				term = true;
+				continue;
+			}
+
+			Dbprintf(" [x] Set privacy mode");
+			switch(EnablePrivacySlixLIso15693(uid, password)) {
+				case SLIX_ERR_NORESP:
+					Dbprintf("   [E] Tag not found anymore");
+					LED_B_ON();
+					term = true;
+					continue;
+
+				case SLIX_ERR_INVPASS:
+					Dbprintf("   [E] Password was not accepted");
+					LED_B_ON();
+					term = true;
+					continue;
+			}
+			
+			Dbprintf(" [x] Scan for tag again");
+			if(GetInventoryIso15693(uid)) {	
+				Dbprintf("   [E] Tag %02X%02X%02X%02X%02X%02X%02X%02X is responding. Unexpected. Should have been silent.", uid[7], uid[6], uid[5], uid[4], uid[3], uid[2], uid[1], uid[0]);
+				LED_B_ON();
+				term = true;
+				continue;
+			}  else {
+				Dbprintf("   [i] Tag not found anymore");
+			}
+
+			Dbprintf(" [x] Success");
+
+			FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+			SpinDelay(50);
+			FpgaWriteConfWord(FPGA_MAJOR_MODE_HF_READER);
+			SpinDelay(50);
+			WDT_HIT();
+		}
+	}
+
+	Dbprintf("Stress SLIX-L: Finishing");
+	FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+
+	cmd_send(CMD_ACK,1,0,0,0,0);
+	LED_A_OFF();
+	LED_B_OFF();
+	LED_C_OFF();
+	LED_D_OFF();
+}
+
+void LockPassSlixLIso15693(uint32_t pass_id, uint32_t password) {
 
 	uint8_t cmd_inventory[]  = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_INVENTORY | ISO15693_REQINV_SLOT1, 0x01, 0x00, 0x00, 0x00 };
 	uint8_t cmd_get_rnd[]    = {ISO15693_REQ_DATARATE_HIGH, 0xB2, 0x04, 0x00, 0x00 };
@@ -1634,7 +1891,7 @@ void LockPassSlixIso15693(uint32_t pass_id, uint32_t password) {
 			cmd_set_pass[8] = crc & 0xff;
 			cmd_set_pass[9] = crc >> 8;
 
-			Dbprintf("LockPass: Sending old password to end privacy mode", cmd_set_pass[4], cmd_set_pass[5], cmd_set_pass[6], cmd_set_pass[7]);
+			Dbprintf("LockPass: Sending old password to end privacy mode");
 			recvlen = SendDataTag(cmd_set_pass, sizeof(cmd_set_pass), false, true, recvbuf, sizeof(recvbuf), start_time);
 			if (recvlen != 3) {
 				Dbprintf("LockPass: Failed to set password (%d)", recvlen);
@@ -1686,7 +1943,7 @@ void LockPassSlixIso15693(uint32_t pass_id, uint32_t password) {
 	LED_D_OFF();
 }
 
-void DisablePrivacySlixIso15693(uint32_t password) {
+void DisablePrivacySlixLIso15693(uint32_t password) {
 	uint8_t cmd_get_rnd[]    = {ISO15693_REQ_DATARATE_HIGH, 0xB2, 0x04, 0x00, 0x00 };
 	uint8_t cmd_write_pass[] = {ISO15693_REQ_DATARATE_HIGH, 0xB3, 0x04, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 	uint16_t crc;

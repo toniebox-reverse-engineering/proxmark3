@@ -1148,11 +1148,11 @@ void UsbPacketReceived(uint8_t *packet, int len)
 			break;
 					
 		case CMD_ISO_15693_DISABLE_PRIVACY:
-			DisablePrivacySlixIso15693(c->arg[0]);
+			DisablePrivacySlixLIso15693(c->arg[0]);
 			break;	
 					
 		case CMD_ISO_15693_CHANGE_PASSWORD:
-			ChangePassSlixIso15693(c->arg[0],c->arg[1],c->arg[2]);
+			ChangePassSlixLIso15693(c->arg[0],c->arg[1],c->arg[2]);
 			break;	
 					
 		case CMD_ISO_15693_FIND_AFI:
@@ -1552,7 +1552,7 @@ void  __attribute__((noreturn)) AppMain(void)
 	if (BUTTON_HELD(1000) > 0) {
 		int mode = 0;
 		bool done = false;
-		const char *modes[] = { "Set password", "Reveal tag", "Lock password", "unused", "Quit standalone" };
+		const char *modes[] = { "Set password", "Reveal tag", "Lock password", "Stresstest", "Quit standalone" };
 
 		Dbprintf("Starting standalone mode: Menu");
 		LED(0x0F, 0);
@@ -1609,15 +1609,16 @@ void  __attribute__((noreturn)) AppMain(void)
 					switch(mode)
 					{
 						case 0:
-							ChangePassSlixIso15693(4, 0, 0x7FFD6E5B); //0x0F0F0F0F
+							ChangePassSlixLIso15693(4, 0, 0x7FFD6E5B); //0x0F0F0F0F
 							break;
 						case 1:
-							DisablePrivacySlixIso15693(0x7FFD6E5B); //0x0F0F0F0F
+							DisablePrivacySlixLIso15693(0x7FFD6E5B); //0x0F0F0F0F
 							break;
 						case 2:
-							LockPassSlixIso15693(4, 0x7FFD6E5B); //0x0F0F0F0F
+							LockPassSlixLIso15693(4, 0x7FFD6E5B); //0x0F0F0F0F
 							break;
 						case 3:
+							StressSlixLIso15693(0x0F0F0F0F);
 							break;
 						case 4:
 							done = true;
