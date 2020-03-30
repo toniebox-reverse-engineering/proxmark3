@@ -1613,6 +1613,44 @@ uint32_t WritePassSlixLIso15693(uint8_t *uid, uint8_t pass_id, uint32_t password
 	return SLIX_ERR_OK;
 }
 
+int WriteMemoryIso15693(uint8_t bank, uint8_t *data) {
+	
+	uint8_t cmd_write_mem[] = {ISO15693_REQ_DATARATE_HIGH , ISO15693_WRITEBLOCK, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	int recvlen = 0;
+	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
+
+	memcpy(&cmd_write_mem[3], data, 4);
+	cmd_write_mem[2] = bank;
+
+	Iso15693AddCrc(cmd_write_mem, 7);
+
+	recvlen = SendDataTag(cmd_write_mem, sizeof(cmd_write_mem), false, true, recvbuf, sizeof(recvbuf), 0);
+	if (recvlen != 3) {
+		return SLIX_ERR_NORESP;
+	}
+
+	return SLIX_ERR_OK;
+}
+
+int ReadMemoryIso15693(uint8_t bank, uint8_t *data) {
+	
+	uint8_t cmd_read_mem[] = {ISO15693_REQ_DATARATE_HIGH, ISO15693_READBLOCK, 0x00, 0x00, 0x00 };
+	int recvlen = 0;
+	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
+
+	cmd_read_mem[2] = bank;
+
+	Iso15693AddCrc(cmd_read_mem, 3);
+
+	recvlen = SendDataTag(cmd_read_mem, sizeof(cmd_read_mem), false, true, recvbuf, sizeof(recvbuf), 0);
+	if (recvlen != 7) {
+		return SLIX_ERR_NORESP;
+	}
+	memcpy(data, &recvbuf[1], 4);
+
+	return SLIX_ERR_OK;
+}
+
 void ChangePassSlixLIso15693(uint32_t pass_id, uint32_t old_password, uint32_t password)
 {
 	uint8_t uid[8];
@@ -1699,7 +1737,11 @@ void ChangePassSlixLIso15693(uint32_t pass_id, uint32_t old_password, uint32_t p
 	LED_D_OFF();
 }
 
-void StressSlixLIso15693(uint32_t password)
+#define STRESS_TEST_PRIVACY 1
+#define STRESS_TEST_WRITE   2
+#define STRESS_TEST_READ    4
+
+void StressSlixLIso15693(uint32_t password, uint32_t flags)
 {
 	uint32_t loops = 0;
 	bool done = false;
@@ -1747,62 +1789,102 @@ void StressSlixLIso15693(uint32_t password)
 			}
 
 			Dbprintf("Loop #%d", ++loops);
-			Dbprintf(" [x] Set password");
 
-			switch(SetPassSlixLIso15693(4, password)) {
-				case SLIX_ERR_NORESP:
-					Dbprintf("   [i] No tag found");
-					LED_C_ON();
-					term = true;
-					continue;
+			if(flags & STRESS_TEST_PRIVACY) {
+				Dbprintf(" [x] Set password");
 
-				case SLIX_ERR_INVPASS:
-					Dbprintf("   [E] Password was not accepted");
+				switch(SetPassSlixLIso15693(4, password)) {
+					case SLIX_ERR_NORESP:
+						Dbprintf("   [i] No tag found");
+						LED_C_ON();
+						term = true;
+						continue;
+
+					case SLIX_ERR_INVPASS:
+						Dbprintf("   [E] Password was not accepted");
+						LED_B_ON();
+						term = true;
+						continue;
+				}
+
+				Dbprintf(" [x] Scan for tag");
+				if(GetInventoryIso15693(uid)) {	
+					Dbprintf("   [i] Tag %02X%02X%02X%02X%02X%02X%02X%02X is responding.", uid[7], uid[6], uid[5], uid[4], uid[3], uid[2], uid[1], uid[0]);
+				} else {
+					Dbprintf("   [E] Tag did not appear. Invalid password?");
 					LED_B_ON();
 					term = true;
 					continue;
+				}
+
 			}
 			
-			Dbprintf(" [x] Scan for tag");
-			if(GetInventoryIso15693(uid)) {	
-				Dbprintf("   [i] Tag %02X%02X%02X%02X%02X%02X%02X%02X is responding.", uid[7], uid[6], uid[5], uid[4], uid[3], uid[2], uid[1], uid[0]);
-			} else {
-				Dbprintf("   [E] Tag did not appear. Invalid password?");
-				LED_B_ON();
-				term = true;
-				continue;
+			if(flags & STRESS_TEST_WRITE) {
+
+				Dbprintf(" [x] Write memory");
+				switch(WriteMemoryIso15693(0, (uint8_t *)&loops))  {
+					case SLIX_ERR_NORESP:
+						Dbprintf("   [E] Tag not found anymore");
+						LED_B_ON();
+						term = true;
+						continue;
+
+					case SLIX_ERR_OK:
+						break;
+				}
 			}
 
-			Dbprintf(" [x] Set privacy mode");
-			switch(EnablePrivacySlixLIso15693(uid, password)) {
-				case SLIX_ERR_NORESP:
-					Dbprintf("   [E] Tag not found anymore");
+			if(flags & STRESS_TEST_READ) {
+				uint32_t read_value = 0;
+
+				Dbprintf(" [x] Read memory");
+				switch(ReadMemoryIso15693(0, (uint8_t *)&read_value))  {
+					case SLIX_ERR_NORESP:
+						Dbprintf("   [E] Tag not found anymore");
+						LED_B_ON();
+						term = true;
+						continue;
+
+					case SLIX_ERR_OK:
+						Dbprintf("   [i] Read 0x%04X", read_value);
+						break;
+				}
+			}
+				
+			if(flags & STRESS_TEST_PRIVACY) {
+				Dbprintf(" [x] Set privacy mode");
+				switch(EnablePrivacySlixLIso15693(uid, password)) {
+					case SLIX_ERR_NORESP:
+						Dbprintf("   [E] Tag not found anymore");
+						LED_B_ON();
+						term = true;
+						continue;
+
+					case SLIX_ERR_INVPASS:
+						Dbprintf("   [E] Password was not accepted");
+						LED_B_ON();
+						term = true;
+						continue;
+				}
+
+				Dbprintf(" [x] Scan for tag again");
+				if(GetInventoryIso15693(uid)) {	
+					Dbprintf("   [E] Tag %02X%02X%02X%02X%02X%02X%02X%02X is responding. Unexpected. Should have been silent.", uid[7], uid[6], uid[5], uid[4], uid[3], uid[2], uid[1], uid[0]);
 					LED_B_ON();
 					term = true;
 					continue;
-
-				case SLIX_ERR_INVPASS:
-					Dbprintf("   [E] Password was not accepted");
-					LED_B_ON();
-					term = true;
-					continue;
-			}
-			
-			Dbprintf(" [x] Scan for tag again");
-			if(GetInventoryIso15693(uid)) {	
-				Dbprintf("   [E] Tag %02X%02X%02X%02X%02X%02X%02X%02X is responding. Unexpected. Should have been silent.", uid[7], uid[6], uid[5], uid[4], uid[3], uid[2], uid[1], uid[0]);
-				LED_B_ON();
-				term = true;
-				continue;
-			}  else {
-				Dbprintf("   [i] Tag not found anymore");
-			}
+				}  else {
+					Dbprintf("   [i] Tag not found anymore");
+				}
+			} 
 
 			Dbprintf(" [x] Success");
-
-			FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
-			SpinDelay(50);
-			FpgaWriteConfWord(FPGA_MAJOR_MODE_HF_READER);
+			WDT_HIT();
+		}
+		
+		/* wait for tag being removed */
+		Dbprintf("   [i] Wait for tag being removed");
+		while(GetRandomSlixLIso15693(NULL) && !BUTTON_PRESS()) {	
 			SpinDelay(50);
 			WDT_HIT();
 		}
@@ -1930,51 +2012,25 @@ void LockPassSlixLIso15693(uint32_t pass_id, uint32_t password) {
 }
 
 void DisablePrivacySlixLIso15693(uint32_t password) {
-	bool done = false;
 
-	Dbprintf("DisablePrivacy: Press button to reveal tag, long-press to terminate.");
+	Dbprintf(" [x] Set password");
 
-	while (!done) {
-		LED_D_ON();
-		switch(BUTTON_HELD(1000)) {
-			case BUTTON_SINGLE_CLICK:
-				Dbprintf("DisablePrivacy: Reset 'DONE'-LED (A)");
-				LED_A_OFF();
-				LED_B_OFF();
-				LED_C_OFF();
-				break;
-			case BUTTON_HOLD:
-				Dbprintf("DisablePrivacy: Terminating");
-				done = true;
-				break;
-			default:
-				SpinDelay(50);
-				continue;
-		}
+	LED_D_ON();
+	Iso15693InitReader();
 
-		if(done) {
-			break;
-		}
+	switch(SetPassSlixLIso15693(4, password)) {
+		case SLIX_ERR_NORESP:
+			Dbprintf("   [i] No tag found");
+			LED_C_ON();
+			return;
 
-		Dbprintf(" [x] Set password");
-
-		switch(SetPassSlixLIso15693(4, password)) {
-			case SLIX_ERR_NORESP:
-				Dbprintf("   [i] No tag found");
-				LED_C_ON();
-				done = true;
-				continue;
-
-			case SLIX_ERR_INVPASS:
-				Dbprintf("   [E] Password was not accepted");
-				LED_B_ON();
-				done = true;
-				continue;
-		}
-		Dbprintf(" [x] Success");
+		case SLIX_ERR_INVPASS:
+			Dbprintf("   [E] Password was not accepted");
+			LED_B_ON();
+			return;
 	}
+	Dbprintf(" [x] Success");
 
-	Dbprintf("DisablePrivacy: Finishing");
 	FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
 	
 	cmd_send(CMD_ACK,1,0,0,0,0);
@@ -1990,7 +2046,7 @@ void DisablePrivacySlixLIso15693(uint32_t password) {
 // TODO: interpret other reader commands and send appropriate response
 void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 {
-	bool private = true;
+	bool private = false;//true;
 	bool done = false;
 	bool debug = false;
 	bool passive = false;
@@ -2052,6 +2108,41 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 				
 		switch(command)
 		{
+			case ISO15693_GET_SYSTEM_INFO:
+			{
+				if(!private)
+				{
+					Dbprintf("ISO15693_GET_SYSTEM_INFO");
+					uint8_t resp[17];
+					uint16_t crc;
+
+					resp[0] = ISO15693_NOERROR; 
+					resp[1] = 0x0F;
+					memcpy(&resp[2], uid, 8);
+					resp[10] = 0x00; /* DSFID */
+					resp[11] = 0x00; /* AFI */
+					resp[12] = 0x07; /* number of blocks */
+					resp[13] = 0x03; /* block size */
+					resp[14] = 0x03; /* IC reference */
+
+					crc = Iso15693Crc(resp, 15);
+					resp[15] = crc & 0xff;
+					resp[16] = crc >> 8;
+
+					if(!passive)
+					{
+						CodeIso15693AsTag(resp, sizeof(resp));
+						TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+					}
+					break;
+				}
+				else
+				{
+					Dbprintf("ISO15693_GET_SYSTEM_INFO (won't answer, privacy mode)");
+				}
+				break;
+			}
+
 			case ISO15693_INVENTORY:
 			{
 				if(!private)
@@ -2191,6 +2282,35 @@ void SimTagIso15693(uint32_t parameter, uint8_t *uid)
 
 					CodeIso15693AsTag(resp, sizeof(resp));
 					TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+				}
+				break;
+			}
+
+			case 0xB8: /* SLS2S5002_B8 */
+			{
+				if(!private)
+				{
+					Dbprintf("ISO15693_B8");
+					uint8_t resp[4];
+					uint16_t crc;
+
+					resp[0] = ISO15693_ERROR_CMD_NOT_SUP; 
+					resp[1] = 0x0F; /* unknown */
+
+					crc = Iso15693Crc(resp, 2);
+					resp[2] = crc & 0xff;
+					resp[3] = crc >> 8;
+
+					if(!passive)
+					{
+						CodeIso15693AsTag(resp, sizeof(resp));
+						TransmitTo15693Reader(ToSend, ToSendMax, start_time, slow);
+					}
+					break;
+				}
+				else
+				{
+					Dbprintf("ISO15693_GET_SYSTEM_INFO (won't answer, privacy mode)");
 				}
 				break;
 			}

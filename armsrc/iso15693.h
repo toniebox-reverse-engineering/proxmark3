@@ -17,7 +17,7 @@ void SnoopIso15693(void);
 void AcquireRawAdcSamplesIso15693(void);
 void ReaderIso15693(uint32_t parameter);
 
-void StressSlixLIso15693(uint32_t password);
+void StressSlixLIso15693(uint32_t password, uint32_t flags);
 void ChangePassSlixLIso15693(uint32_t pass_id, uint32_t old_password, uint32_t password);
 void LockPassSlixLIso15693(uint32_t pass_id, uint32_t password);
 void DisablePrivacySlixLIso15693(uint32_t password);
