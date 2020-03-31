@@ -1609,11 +1609,11 @@ void  __attribute__((noreturn)) AppMain(void)
 					switch(mode)
 					{
 						case 0:
-							ChangePassSlixLIso15693(4, 0, 0x7FFD6E5B); //0x0F0F0F0F
+							ChangePassSlixLIso15693(4, 0, 0x7FFD6E5B);
 							break;
 						case 1:
-							DisablePrivacySlixLIso15693(0x7FFD6E5B); //0x0F0F0F0F
-							DisablePrivacySlixLIso15693(0x0F0F0F0F); //0x0F0F0F0F
+							DisablePrivacySlixLIso15693(0x7FFD6E5B);
+							DisablePrivacySlixLIso15693(0x0F0F0F0F);
 							break;
 						case 2:
 							LockPassSlixLIso15693(4, 0x7FFD6E5B);
