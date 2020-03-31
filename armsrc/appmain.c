@@ -1552,7 +1552,7 @@ void  __attribute__((noreturn)) AppMain(void)
 	if (BUTTON_HELD(1000) > 0) {
 		int mode = 0;
 		bool done = false;
-		const char *modes[] = { "Set password", "Reveal tag", "Lock password", "Stresstest", "Quit standalone" };
+		const char *modes[] = { "Set password", "Reveal tag", "Lock password", "Stresstest", "Bruteforce", "Quit standalone" };
 
 		Dbprintf("Starting standalone mode: Menu");
 		LED(0x0F, 0);
@@ -1583,6 +1583,10 @@ void  __attribute__((noreturn)) AppMain(void)
 					LED_D_ON();
 					break;
 				case 4:
+					LED_D_ON();
+					LED_A_ON();
+					break;
+				case 5:
 					LED_A_ON();
 					LED_B_ON();
 					LED_C_ON();
@@ -1594,7 +1598,7 @@ void  __attribute__((noreturn)) AppMain(void)
 
 				case BUTTON_SINGLE_CLICK:
 					mode++;
-					mode %= 5;
+					mode %= 6;
 					Dbprintf(" Menu #%d: %s", mode, modes[mode]);
 					break;
 
@@ -1622,6 +1626,9 @@ void  __attribute__((noreturn)) AppMain(void)
 							StressSlixLIso15693(0x0F0F0F0F, 7);
 							break;
 						case 4:
+							BruteForceIso15693();
+							break;
+						case 5:
 							done = true;
 							break;
 					}

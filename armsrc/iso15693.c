@@ -61,6 +61,7 @@
 #include "cmd.h"
 #include "BigBuf.h"
 #include "fpgaloader.h"
+#include "printf.h"
 
 #define arraylen(x) (sizeof(x)/sizeof((x)[0]))
 
@@ -2030,6 +2031,106 @@ void DisablePrivacySlixLIso15693(uint32_t password) {
 			return;
 	}
 	Dbprintf(" [x] Success");
+
+	FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+	
+	cmd_send(CMD_ACK,1,0,0,0,0);
+	LED_A_OFF();
+	LED_B_OFF();
+	LED_C_OFF();
+	LED_D_OFF();
+}
+
+
+void BruteForceIso15693() {
+
+	uint8_t cmd_buffer[64];
+	uint16_t start_cmd = 0xa0;
+	uint16_t end_cmd = 0xff;
+	uint8_t max_payload = 16; /* maximum 16 byte */
+	uint8_t uid[8];
+	int recvlen = 0;
+	bool done = false;
+	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
+	
+	Dbprintf(" [x] Starting brute force");
+	Dbprintf(" [x]   Start 0x%02X", start_cmd);
+	Dbprintf(" [x]   End   0x%02X", end_cmd);
+
+	LED_D_ON();
+	Iso15693InitReader();
+
+	if(GetInventoryIso15693(uid)) {	
+		Dbprintf(" [i] Tag %02X%02X%02X%02X%02X%02X%02X%02X found", uid[7], uid[6], uid[5], uid[4], uid[3], uid[2], uid[1], uid[0]);
+	} else {
+		Dbprintf(" [E] Tag was in privacy mode. Exiting.");
+	}
+
+	memset(cmd_buffer, 0x00, sizeof(cmd_buffer));
+	cmd_buffer[0] = ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_ADDRESS;
+	memcpy(&cmd_buffer[3], uid, 8);
+
+	for(uint16_t current_cmd = start_cmd; current_cmd <= end_cmd; current_cmd++) {
+
+		Dbprintf(" [x] Test command 0x%02X", current_cmd);
+		for(int payload = 0; payload < max_payload; payload++) {
+
+		for(uint16_t magic = 0; magic <= 0xff; magic++) {
+				if (BUTTON_PRESS()) {
+					Dbprintf(" [i] Terminating");
+					done = true;
+					break;
+				}
+
+				if(!GetInventoryIso15693(uid)) {
+					FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
+					SpinDelay(200);
+					FpgaWriteConfWord(FPGA_MAJOR_MODE_HF_READER);
+					SpinDelay(50);
+					if(!GetInventoryIso15693(uid)) {
+						Dbprintf(" [E] Tag doesnt respond anymore. Terminating.");
+						done = true;
+						break;
+					}
+				}
+
+				cmd_buffer[1] = current_cmd;
+				cmd_buffer[2] = magic;
+				memset(&cmd_buffer[11], 0x00, payload);
+				Iso15693AddCrc(cmd_buffer, 11 + payload);
+
+				int cmd_len = 11 + payload + 2;
+				
+				recvlen = SendDataTag(cmd_buffer, cmd_len, false, true, recvbuf, sizeof(recvbuf), 0);
+				if (recvlen != 0) {
+					if(recvlen != 4 || !(recvbuf[0] == ISO15693_ERROR_CMD_NOT_SUP && recvbuf[1] == 0x0F)) {
+						uint8_t buf[16*3 + 1];
+
+						Dbprintf("      - success with %d byte payload (%d byte answer)", payload, recvlen);
+						
+						DbpString("request");
+						buf[0] = 0;
+						for(int pos = 0; pos < cmd_len; pos++) {
+							sprintf((char *)&buf[3*pos], "%02X ", cmd_buffer[pos]);
+						}
+						DbpString((char *)buf);
+						
+						DbpString("response");
+						buf[0] = 0;
+						for(int pos = 0; pos < recvlen; pos++) {
+							sprintf((char *)&buf[3*pos], "%02X ", recvbuf[pos]);
+						}
+						DbpString((char *)buf);
+					}
+				}
+			}
+		}
+
+		if(done) {
+			break;
+		}
+
+	}
 
 	FpgaWriteConfWord(FPGA_MAJOR_MODE_OFF);
 	
