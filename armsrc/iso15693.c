@@ -1483,7 +1483,7 @@ void SetupPasswordSlixLIso15693(uint8_t *buffer, uint32_t password, uint8_t *rnd
 
 bool GetRandomSlixLIso15693(uint8_t *rnd)
 {
-	uint8_t cmd_get_rnd[] = {ISO15693_REQ_DATARATE_HIGH, 0xB2, 0x04, 0x00, 0x00 };
+	uint8_t cmd_get_rnd[] = {ISO15693_REQ_DATARATE_HIGH, ISO15693_CMD_NXP_GET_RANDOM_NUMBER, ISO15693_MANUFACTURER_NXP, 0x00, 0x00 };
 	int recvlen = 0;
 	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
 
@@ -1502,7 +1502,7 @@ bool GetRandomSlixLIso15693(uint8_t *rnd)
 
 uint32_t SetPassSlixLIso15693(uint8_t pass_id, uint32_t password)
 {
-	uint8_t cmd_set_pass[] = {ISO15693_REQ_DATARATE_HIGH, 0xB3, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t cmd_set_pass[] = {ISO15693_REQ_DATARATE_HIGH, ISO15693_CMD_NXP_SET_PASSWORD, ISO15693_MANUFACTURER_NXP, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 	int recvlen = 0;
 	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
 
@@ -1543,7 +1543,7 @@ bool GetInventoryIso15693(uint8_t *uid)
 
 uint32_t EnablePrivacySlixLIso15693(uint8_t *uid, uint32_t password)
 {
-	uint8_t cmd_enable_priv[] = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_ADDRESS, 0xBA, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t cmd_enable_priv[] = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_ADDRESS, ISO15693_CMD_NXP_ENABLE_PRIVACY, ISO15693_MANUFACTURER_NXP, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 	int recvlen = 0;
 	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
 
@@ -1567,7 +1567,7 @@ uint32_t EnablePrivacySlixLIso15693(uint8_t *uid, uint32_t password)
 
 uint32_t DestroySlixLIso15693(uint8_t *uid, uint32_t password)
 {
-	uint8_t cmd_enable_priv[] = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_ADDRESS, 0xB9, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t cmd_enable_priv[] = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_ADDRESS, ISO15693_CMD_NXP_DESTROY, ISO15693_CMD_NXP_ENABLE_PRIVACY, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 	int recvlen = 0;
 	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
 
@@ -1591,7 +1591,7 @@ uint32_t DestroySlixLIso15693(uint8_t *uid, uint32_t password)
 
 uint32_t WritePassSlixLIso15693(uint8_t *uid, uint8_t pass_id, uint32_t password)
 {
-	uint8_t cmd_write_pass[] = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_ADDRESS, 0xB4, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+	uint8_t cmd_write_pass[] = {ISO15693_REQ_DATARATE_HIGH | ISO15693_REQ_ADDRESS, ISO15693_CMD_NXP_WRITE_PASSWORD, ISO15693_MANUFACTURER_NXP, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 	int recvlen = 0;
 	uint8_t recvbuf[ISO15693_MAX_RESPONSE_LENGTH];
 
